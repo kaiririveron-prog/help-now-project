@@ -1,15 +1,13 @@
 """
 HelpNow backend
 ---------------
-Serves the website (index.html) and one API route, /api/match, that asks an AI
-model to turn a customer's description into a service category.
+Serves the website (index.html) and one API route, /api/match, that asks Google
+Gemini to turn a customer's description into a service category.
 
-AI providers (set at least one key, or the site falls back to keyword matching):
-  GROQ_API_KEY       Groq (has a free tier)
-  GEMINI_API_KEY     Google Gemini
-  ANTHROPIC_API_KEY  Claude
-If more than one is set, they are used in that order unless AI_PROVIDER says
-otherwise (AI_PROVIDER=groq, gemini, or claude).
+Set GEMINI_API_KEY (in .env on your computer, or under Environment on Render).
+With no key, the website still works and falls back to keyword matching.
+Claude is also supported: set ANTHROPIC_API_KEY (and AI_PROVIDER=claude if both
+keys are set).
 
 Run it:  python app.py   then open http://127.0.0.1:5000
 """
@@ -28,14 +26,13 @@ load_dotenv()  # reads keys and optional settings from the .env file
 BASE_DIR = Path(__file__).resolve().parent
 CATEGORIES = {"plumbing", "electric", "cleaning", "moving", "garden", "assembly", "car", "emergency"}
 
-# Model names change over time, so Groq and Gemini try a short list in order.
-# Set GROQ_MODEL / GEMINI_MODEL in .env (or on Render) to force one model.
-GROQ_MODELS = [os.getenv("GROQ_MODEL")] if os.getenv("GROQ_MODEL") else ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+# Model names change over time, so Gemini tries this short list in order.
+# Set GEMINI_MODEL in .env (or on Render) to force one model.
 GEMINI_MODELS = [os.getenv("GEMINI_MODEL")] if os.getenv("GEMINI_MODEL") else ["gemini-3.5-flash", "gemini-2.5-flash"]
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-5-5")
 
 # Which environment variable holds each provider's key (also the order they are tried).
-KEY_NAMES = {"groq": "GROQ_API_KEY", "gemini": "GEMINI_API_KEY", "claude": "ANTHROPIC_API_KEY"}
+KEY_NAMES = {"gemini": "GEMINI_API_KEY", "claude": "ANTHROPIC_API_KEY"}
 
 SYSTEM_PROMPT = (
     "You match customers to helpers on a handyperson app. "
@@ -55,7 +52,7 @@ _clients = {}  # AI clients are created on first use, so the site loads without 
 
 
 def pick_provider():
-    """Return 'groq', 'gemini', 'claude', or None depending on which keys are set."""
+    """Return 'gemini', 'claude', or None depending on which keys are set."""
     wanted = os.getenv("AI_PROVIDER", "").lower()
     if wanted in KEY_NAMES and os.getenv(KEY_NAMES[wanted]):
         return wanted
@@ -63,32 +60,6 @@ def pick_provider():
         if os.getenv(key_name):
             return name
     return None
-
-
-def ask_groq(text):
-    """Send the customer's text to Groq and return the model's raw reply."""
-    from groq import Groq
-
-    if "groq" not in _clients:
-        _clients["groq"] = Groq(api_key=os.environ["GROQ_API_KEY"])
-    last_error = None
-    for model in GROQ_MODELS:
-        try:
-            response = _clients["groq"].chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": text},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.2,
-                max_tokens=400,
-            )
-            return response.choices[0].message.content or ""
-        except Exception as exc:  # retired model name, rate limit, network problem...
-            last_error = exc
-            app.logger.warning("Groq model %s failed: %s", model, exc)
-    raise last_error
 
 
 def ask_gemini(text):
@@ -107,7 +78,7 @@ def ask_gemini(text):
         try:
             response = _clients["gemini"].models.generate_content(model=model, contents=text, config=config)
             return response.text or ""
-        except Exception as exc:
+        except Exception as exc:  # retired model name, rate limit, network problem...
             last_error = exc
             app.logger.warning("Gemini model %s failed: %s", model, exc)
     raise last_error
@@ -128,7 +99,7 @@ def ask_claude(text):
     return "".join(block.text for block in message.content if block.type == "text")
 
 
-ASK = {"groq": ask_groq, "gemini": ask_gemini, "claude": ask_claude}
+ASK = {"gemini": ask_gemini, "claude": ask_claude}
 
 # Simple per-visitor limit so nobody can use up your AI quota: 20 requests a minute.
 _hits = defaultdict(deque)
