@@ -19,6 +19,7 @@ header h1{font-size:30px;font-weight:800;display:flex;align-items:center;gap:10p
 header h1 svg{height:36px;width:auto;flex:none}
 header p{margin:8px 0 0;color:#c4e3d0;max-width:46ch}
 main{max-width:1000px;margin:0 auto;padding:14px 14px 40px;display:grid;gap:14px}
+main>*{min-width:0}
 @media(min-width:800px){main{grid-template-columns:1.25fr 1fr;align-items:start}.left{position:sticky;top:12px}}
 .chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px}
 .chip{flex:none;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:99px;padding:8px 14px;font:500 14px "Public Sans",sans-serif;cursor:pointer}
@@ -47,6 +48,17 @@ svg{display:block;width:100%;height:auto}
 .stars{color:#e59a00;letter-spacing:1px}
 .badge{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:6px;padding:2px 7px;margin:4px 4px 0 0;color:var(--ok);font-weight:500}
 .badge::before{content:"✓ "}
+.badge.self{color:var(--mute)}.badge.self::before{content:"• "}
+label.f{display:block;font-weight:700;font-size:14px;margin:12px 0 4px}
+.sheet input,.sheet select{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;background:var(--bg);color:var(--ink)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#f-err{color:#d92d20;font-size:14px;margin:8px 0;min-height:1em}
+#pickbar{display:none;background:var(--hi);color:var(--hi-ink);padding:10px 14px;font-size:14px;font-weight:700}
+#pickbar .btn{margin-left:8px;border-color:currentColor}
+.mapwrap.pick svg{cursor:crosshair}
+.btn.line{background:none;border:1px solid var(--line);color:var(--ink)}
+.link{background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit;padding:0}
+footer{max-width:1000px;margin:0 auto;padding:0 14px 30px}
 .btn{border:0;border-radius:10px;padding:12px 16px;font:700 15px "Public Sans",sans-serif;cursor:pointer;background:var(--hi);color:var(--hi-ink)}
 .btn.dark{background:var(--ink);color:var(--bg)}.btn:disabled{opacity:.5;cursor:not-allowed}
 .btn.full{width:100%}
@@ -70,6 +82,7 @@ button:focus-visible{outline:3px solid var(--hi);outline-offset:2px}
 <header>
   <h1><svg viewBox="0 0 32 40" aria-hidden="true"><path d="M16 1C8 1 2 7 2 15c0 10 14 24 14 24s14-14 14-24C30 7 24 1 16 1z" fill="var(--hi)"/><path d="M9.5 15.5l4.5 4.5 8.5-9" fill="none" stroke="var(--hi-ink)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>HelpNow</h1>
   <p>See who is nearby, check their credentials, and get them on the way. Rate every job.</p>
+  <button class="btn" id="join" style="margin-top:12px">Become a helper</button>
 </header>
 <main>
   <section class="left">
@@ -81,6 +94,7 @@ button:focus-visible{outline:3px solid var(--hi);outline-offset:2px}
     <div class="chips" id="chips" role="group" aria-label="Filter by service"></div>
     <div class="sos" id="sos"><div><b>Fire, gas smell, or someone hurt? Call 911 first.</b><br>HelpNow is for urgent repairs, not first responders.</div><a href="tel:911">Call 911</a></div>
     <div class="mapwrap">
+      <div id="pickbar">Tap the map to place your pin <button class="btn line" id="pickcancel" style="padding:6px 10px">Cancel</button></div>
       <div id="banner" aria-live="polite"></div>
       <svg id="map" viewBox="0 0 400 300" role="img" aria-label="Map of nearby helpers"></svg>
     </div>
@@ -91,6 +105,7 @@ button:focus-visible{outline:3px solid var(--hi);outline-offset:2px}
     <div class="list" id="list"></div>
   </section>
 </main>
+<footer><p class="note">Your profile and ratings are saved on this device only. <button class="link" id="reset">Reset demo data</button></p></footer>
 <div id="ov" role="dialog" aria-modal="true"><div class="sheet" id="sheet"></div></div>
 <div id="toast" role="status"></div>
 <script>
@@ -122,11 +137,11 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 const byId=id=>H.find(h=>h.id===id);
 const dist=h=>Math.hypot(h.dlng*84.1,h.dlat*111);
 const eta=h=>Math.max(1,Math.round(dist(h)/.4)+2);
-const avg=h=>h.r.reduce((a,b)=>a+b[0],0)/h.r.length;
+const avg=h=>h.r.length?h.r.reduce((a,b)=>a+b[0],0)/h.r.length:0;
 const stars=n=>'★'.repeat(Math.round(n))+'☆'.repeat(5-Math.round(n));
 const xy=h=>[200+h.dlng*84.1*80,150-h.dlat*111*80];
 const coords=h=>(ME.lat+h.dlat).toFixed(5)+', '+(ME.lng+h.dlng).toFixed(5);
-const ini=n=>n.split(' ').map(w=>w[0]).join('');
+const ini=n=>n.split(/\s+/).filter(Boolean).map(w=>w[0]).join('').slice(0,2).toUpperCase();
 const vis=()=>H.filter(h=>filter==='all'||h.cat===filter);
 
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',2600)}
@@ -148,7 +163,11 @@ function map(){
   s+=`<circle cx="200" cy="150" r="9" fill="#2b7bff" stroke="#fff" stroke-width="3"/>`;
   $('#map').innerHTML=s;
 }
-$('#map').addEventListener('click',e=>{const g=e.target.closest('.pin');if(g)openHelper(+g.dataset.id)});
+$('#map').addEventListener('click',e=>{
+  if(pickMode){const r=$('#map').getBoundingClientRect(),x=(e.clientX-r.left)/r.width*400,y=(e.clientY-r.top)/r.height*300;
+    draft.dlng=Math.round((x-200)/(84.1*80)*1e5)/1e5;draft.dlat=Math.round((150-y)/(111*80)*1e5)/1e5;endPick();openForm(null,true);return}
+  const g=e.target.closest('.pin');if(g)openHelper(+g.dataset.id)
+});
 $('#map').addEventListener('keydown',e=>{if(e.key==='Enter'){const g=e.target.closest('.pin');if(g)openHelper(+g.dataset.id)}});
 
 function list(){
@@ -158,8 +177,8 @@ function list(){
     <div class="av" style="background:${COL[(h.id-1)%8]}">${ini(h.name)}</div>
     <div><div class="t">${esc(h.name)}</div>
     <div class="meta">${h.svc||CATS[h.cat][0]} · $${h.rate}/hr · ${dist(h).toFixed(1)} km · ${eta(h)} min</div>
-    <div><span class="stars">${stars(avg(h))}</span> <span class="meta">${avg(h).toFixed(1)} (${h.r.length})</span></div>
-    <span class="badge">${esc(h.q[0])}</span></div></button>`).join('');
+    <div>${ratingHtml(h)}</div>
+    ${h.q.length?badge(h,h.q[0]):''}</div></button>`).join('');
 }
 $('#list').onclick=e=>{const c=e.target.closest('.card');if(c)openHelper(+c.dataset.id)};
 function draw(){map();list()}
@@ -174,15 +193,20 @@ function openHelper(id){
   show(`<button class="close" aria-label="Close">×</button>
   <div style="display:flex;gap:12px;align-items:center"><div class="av" style="background:${COL[(h.id-1)%8]};width:56px;height:56px">${ini(h.name)}</div>
   <div><h2>${esc(h.name)}</h2><div class="meta">${CATS[h.cat][1]} ${h.svc||CATS[h.cat][0]}</div>
-  <span class="stars">${stars(avg(h))}</span> <span class="meta">${avg(h).toFixed(1)} from ${h.r.length} reviews</span></div></div>
+  ${ratingHtml(h,true)}</div></div>
   <div class="grid3"><div class="stat"><b>${h.yrs} yrs</b><span>Experience</span></div><div class="stat"><b>${h.jobs}</b><span>Jobs done</span></div><div class="stat"><b>$${h.rate}</b><span>Per hour</span></div></div>
-  <h3 style="font-size:16px">Qualifications</h3>${h.q.map(q=>`<span class="badge">${esc(q)}</span>`).join('')}
+  <h3 style="font-size:16px">Qualifications</h3>${h.q.map(q=>badge(h,q)).join('')||'<span class="meta">None listed</span>'}${h.mine?'<div class="note">New profile: qualifications are self-reported and not verified.</div>':''}
   <h3 style="font-size:16px;margin-top:16px">Location</h3>
   <div class="meta">${coords(h)} · ${dist(h).toFixed(1)} km away · about ${eta(h)} min</div>
   <h3 style="font-size:16px;margin:16px 0 4px">Reviews</h3>
-  ${h.r.slice().reverse().map(r=>`<div class="rev"><span class="stars">${stars(r[0])}</span><br>${esc(r[1])}</div>`).join('')}
-  <div style="margin-top:14px"><button class="btn full" id="req" ${job?'disabled':''}>${job?'Finish your current job first':'Request '+esc(h.name.split(' ')[0])+' now'}</button></div>`);
+  ${h.r.slice().reverse().map(r=>`<div class="rev"><span class="stars">${stars(r[0])}</span><br>${esc(r[1])}</div>`).join('')||'<div class="meta">No reviews yet.</div>'}
+  <div style="margin-top:14px"><button class="btn full" id="req" ${job?'disabled':''}>${job?'Finish your current job first':'Request '+esc(h.name.split(' ')[0])+' now'}</button></div>
+  ${h.mine&&!job?'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn line" id="edit" style="flex:1">Edit profile</button><button class="btn line" id="del" style="flex:1">Delete profile</button></div>':''}`);
   const b=$('#req');if(b&&!job)b.onclick=()=>request(id);
+  const ed=$('#edit');
+  if(ed){ed.onclick=()=>openForm(h);let armed=false;
+    $('#del').onclick=function(){if(!armed){armed=true;this.textContent='Tap again to delete';return}
+      H.splice(H.indexOf(h),1);persist();joinBtn();closeSheet();draw();toast('Profile deleted.')}}
 }
 
 function banner(){
@@ -218,7 +242,7 @@ function rateSheet(){
   $('#rate').onclick=e=>{const b=e.target.closest('button');if(!b)return;pick=+b.dataset.i;
     document.querySelectorAll('#rate button').forEach(x=>x.classList.toggle('on',+x.dataset.i<=pick));$('#sub').disabled=false};
   $('#sub').onclick=()=>{
-    h.r.push([pick,$('#txt').value.trim()||'No comment.']);h.jobs++;
+    recordRating(h,pick,$('#txt').value.trim().slice(0,300)||'No comment.');
     h.dlat=h.home.dlat;h.dlng=h.home.dlng;job=null;closeSheet();banner();draw();toast('Thanks! Rating saved.');
   };
 }
@@ -261,6 +285,80 @@ async function findHelp(){
 $('#go').onclick=findHelp;
 $('#q').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();findHelp()}});
 
+/* ---------- saving on this device + helper sign-up ---------- */
+const KEY='helpnow.v1';
+let saved={reviews:{},jobs:{},helpers:[]},pickMode=false,draft=null;
+const num=(v,d)=>(v!==''&&v!==null&&Number.isFinite(+v))?+v:d;
+const okRev=x=>Array.isArray(x)&&x[0]>=1&&x[0]<=5;
+function loadSaved(){try{const d=JSON.parse(localStorage.getItem(KEY)||'null');if(d&&typeof d==='object'){saved.reviews=d.reviews||{};saved.jobs=d.jobs||{};saved.helpers=Array.isArray(d.helpers)?d.helpers:[]}}catch(e){}}
+function persist(){
+  saved.helpers=H.filter(h=>h.mine).map(h=>({id:h.id,name:h.name,cat:h.cat,rate:h.rate,yrs:h.yrs,jobs:h.jobs,q:h.q,r:h.r,dlat:h.home.dlat,dlng:h.home.dlng}));
+  try{localStorage.setItem(KEY,JSON.stringify(saved))}catch(e){}
+}
+function applySaved(){
+  H.forEach(h=>{
+    const rv=Array.isArray(saved.reviews[h.id])?saved.reviews[h.id]:[];
+    rv.filter(okRev).forEach(x=>h.r.push([+x[0],String(x[1]).slice(0,300)]));
+    h.jobs+=num(saved.jobs[h.id],0);
+  });
+  saved.helpers.forEach(s=>{
+    if(!s||!s.name||!CATS[s.cat]||s.cat==='all'||!Array.isArray(s.q)||!Array.isArray(s.r))return;
+    const dlat=num(s.dlat,0),dlng=num(s.dlng,0);
+    H.push({id:num(s.id,Date.now()),name:String(s.name).slice(0,30),cat:s.cat,rate:num(s.rate,40),yrs:num(s.yrs,0),jobs:num(s.jobs,0),
+      q:s.q.slice(0,4).map(x=>String(x).slice(0,60)),r:s.r.filter(okRev).map(x=>[+x[0],String(x[1]).slice(0,300)]),dlat,dlng,home:{dlat,dlng},mine:true});
+  });
+}
+const ratingHtml=(h,long)=>h.r.length?`<span class="stars">${stars(avg(h))}</span> <span class="meta">${avg(h).toFixed(1)} ${long?'from '+h.r.length+' reviews':'('+h.r.length+')'}</span>`:'<span class="meta">New · no reviews yet</span>';
+const badge=(h,q)=>`<span class="badge${h.mine?' self':''}">${esc(q)}</span>`;
+function recordRating(h,n,t){
+  h.r.push([n,t]);h.jobs++;
+  if(!h.mine){(saved.reviews[h.id]=saved.reviews[h.id]||[]).push([n,t]);saved.jobs[h.id]=(saved.jobs[h.id]||0)+1}
+  persist();
+}
+function joinBtn(){$('#join').textContent=H.some(h=>h.mine)?'My profile':'Become a helper'}
+$('#join').onclick=()=>{const m=H.find(h=>h.mine);m?openHelper(m.id):openForm(null)};
+$('#reset').onclick=()=>{try{localStorage.removeItem(KEY)}catch(e){}location.reload()};
+
+function readForm(){draft.name=$('#f-name').value;draft.cat=$('#f-cat').value;draft.rate=$('#f-rate').value;draft.yrs=$('#f-yrs').value;draft.q=$('#f-q').value}
+function openForm(h,keep){
+  if(!keep)draft=h?{id:h.id,name:h.name,cat:h.cat,rate:h.rate,yrs:h.yrs,q:h.q.join('\n'),dlat:h.home.dlat,dlng:h.home.dlng}:{id:null,name:'',cat:'plumbing',rate:40,yrs:1,q:'',dlat:.004,dlng:-.003};
+  const d=draft;
+  show(`<button class="close" aria-label="Close">×</button>
+  <h2>${d.id?'Edit your profile':'Become a helper'}</h2>
+  <p class="meta">Demo only. Please use made-up details, not your real name, phone number, or address.</p>
+  <label class="f" for="f-name">Display name</label><input id="f-name" maxlength="30" value="${esc(d.name)}" placeholder="Example: Sam R.">
+  <label class="f" for="f-cat">What kind of help do you offer?</label>
+  <select id="f-cat">${Object.entries(CATS).filter(e=>e[0]!=='all').map(e=>`<option value="${e[0]}"${e[0]===d.cat?' selected':''}>${e[1][1]} ${e[1][0]}</option>`).join('')}</select>
+  <div class="two"><div><label class="f" for="f-rate">Rate ($ per hour)</label><input id="f-rate" type="number" min="10" max="500" value="${esc(d.rate)}"></div>
+  <div><label class="f" for="f-yrs">Years of experience</label><input id="f-yrs" type="number" min="0" max="60" value="${esc(d.yrs)}"></div></div>
+  <label class="f" for="f-q">Qualifications (one per line, up to 4)</label>
+  <textarea id="f-q" maxlength="300" placeholder="Example: First-aid certified">${esc(d.q)}</textarea>
+  <label class="f">Your spot on the map</label>
+  <div class="meta">${coords(d)}</div>
+  <button class="btn dark" id="f-pick" style="margin:8px 0">Choose my spot on the map</button>
+  <p class="note">New profiles show as unverified. A real app would check licenses and run a background check.</p>
+  <div id="f-err" role="alert"></div>
+  <button class="btn full" id="f-save">Save profile</button>`);
+  $('#f-pick').onclick=()=>{readForm();closeSheet();pickMode=true;$('.mapwrap').classList.add('pick');$('#pickbar').style.display='block';$('#map').scrollIntoView({behavior:'smooth',block:'center'})};
+  $('#f-save').onclick=saveProfile;
+}
+function endPick(){pickMode=false;$('.mapwrap').classList.remove('pick');$('#pickbar').style.display='none'}
+$('#pickcancel').onclick=()=>{endPick();openForm(null,true)};
+function saveProfile(){
+  readForm();const d=draft,err=$('#f-err');
+  const name=d.name.replace(/\s+/g,' ').trim().slice(0,30);
+  const rate=Math.round(+d.rate),yrs=Math.round(+d.yrs);
+  const q=d.q.split('\n').map(x=>x.trim().slice(0,60)).filter(Boolean).slice(0,4);
+  if(!name){err.textContent='Please enter a display name.';return}
+  if(!(rate>=10&&rate<=500)){err.textContent='Rate must be between $10 and $500 per hour.';return}
+  if(!(yrs>=0&&yrs<=60)){err.textContent='Years of experience must be between 0 and 60.';return}
+  const home={dlat:d.dlat,dlng:d.dlng};
+  if(d.id){Object.assign(byId(d.id),{name,cat:d.cat,rate,yrs,q,dlat:d.dlat,dlng:d.dlng,home})}
+  else H.push({id:Date.now(),name,cat:d.cat,rate,yrs,jobs:0,q,r:[],dlat:d.dlat,dlng:d.dlng,home,mine:true});
+  persist();joinBtn();closeSheet();filter='all';chips();$('#sos').classList.remove('on');draw();
+  toast(d.id?'Profile updated.':'You are on the map!');
+}
+loadSaved();applySaved();joinBtn();
 chips();draw();
 </script>
 </body>
